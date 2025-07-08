@@ -1,5 +1,6 @@
 # pip install streamlit
-from .config import *
+#from .config import *
+#from .Utils import *
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -13,49 +14,191 @@ from scipy.stats import kurtosis, skew
 import seaborn as sns
 import matplotlib.pyplot as plt
 from sklearn.metrics import mean_squared_error
-import chart
-import altair as alt
+#import chart
+#import altair as alt
 from pypfopt import EfficientFrontier
+import pandas_datareader as web
 
-st.set_option('deprecation.showPyplotGlobalUse', False)
+
+def GetHistoricalPrice(tickers, start_date, end_date, price='Close'):
+    """
+    Fetches historical stock prices using pandas_datareader (Stooq source)
+    for given tickers and date range.
+    Returns a pandas Series (for single ticker) or DataFrame (for multiple tickers).
+    """
+    st.write(f"Attempting to download data for tickers: {tickers} from {start_date} to {end_date} using Stooq...")
+
+    try:
+        # pandas_datareader with 'stooq' source can handle a list of tickers
+        # It returns a MultiIndex DataFrame if multiple tickers are requested,
+        # with the first level being the metric (e.g., 'Close') and the second being the ticker.
+        data = web.DataReader(tickers, 'stooq', start=start_date, end=end_date)
+        #st.write("Raw data from pandas_datareader (Stooq):")
+        #st.write(data)
+
+        if data.empty:
+            st.warning(
+                "pandas_datareader (Stooq) returned an empty DataFrame. This often means no data is available for the specified range or ticker(s).")
+            return pd.DataFrame()  # Return empty DataFrame if no data is fetched
+
+        # Stooq returns data with columns like ('Close', 'AAPL'), ('Close', 'SPY')
+        # We need to select the 'Close' prices for all tickers.
+        # The data will have a MultiIndex for columns if multiple tickers.
+        # Example: data.columns = [('Close', 'AAPL'), ('Volume', 'AAPL'), ...]
+        # We want to select all columns where the first level is 'Close'.
+
+        # Check if the columns are MultiIndex (for multiple tickers)
+        if isinstance(data.columns, pd.MultiIndex):
+            # Select only the 'Close' prices across all tickers
+            res = data.loc[:, (price, slice(None))]  # Select all rows, and columns where first level is 'Close'
+            res.columns = res.columns.droplevel(0)  # Drop the 'Close' level from column names
+        else:
+            # For a single ticker, it's a regular DataFrame, so just select the 'Close' column
+            res = data[price]
+            # Ensure it's a DataFrame for consistent processing later
+            if isinstance(res, pd.Series):
+                res = res.to_frame(name=tickers[0] if isinstance(tickers, list) else tickers)
+
+        # Stooq returns data with the date as the index, but in descending order.
+        # We need to sort it to ascending order for ffill/bfill to work correctly.
+        res = res.sort_index(ascending=True)
+
+        return res
+
+    except Exception as e:
+        st.error(f"Error fetching data from Stooq: {e}")
+        st.warning("Please ensure the ticker symbol(s) are valid and you have an internet connection.")
+        return pd.DataFrame()
+#st.set_option('deprecation.showPyplotGlobalUse', False)
+
 
 st.set_page_config(
     page_title="Stock fundamental analysis")
 
 st.title('📈 Stock Fundamental Analysis')
-st.markdown('## **Authors: Riccardo Paladin, Gabriella Saade, Nhat Pham**')
+st.markdown('## **Author: Riccardo Paladin**')
 st.markdown(
     'In this web app you can insert stock tickers and obtain a complete fundamental analysis and portfolio optimization.'
     'It is based on machine learning algorithms implemented in python.')
 
 st.markdown('📊 Insert a series of tickers and start the analysis')
 
-tickers_input = st.text_input(' 📍 Enter here the tickers and in the first position the benchmark (no commas)',
-                              '').split()
+col1, col2, col3 = st.columns(3)
 
-start_date = st.text_input('🗓 Enter here the start date (mm-dd-yyyy)', '')
-end_date = st.text_input('🗓 Enter here the end date (mm-dd-yyyy)', '')
+with col1:
+    # Allow comma-separated tickers and parse them into a list
+    ticker_input = st.text_input("Enter Stock Symbol(s) (e.g.AAPL,SPY)", "AAPL").upper()
+    # Split the input string by comma, strip whitespace, and filter out empty strings
+    tickers_list = [t.strip() for t in ticker_input.split(',') if t.strip()]
 
-Data = data.DataReader(tickers_input, 'yahoo', start_date, end_date)
-Stocks_prices = Data['Adj Close']
-all_weekdays = pd.date_range(start=start_date, end=end_date, freq='B')
-Stocks_prices = Stocks_prices.reindex(all_weekdays)
-Stocks_prices = Stocks_prices.fillna(method='ffill')
-st.dataframe(Stocks_prices) #Show dataframe
+with col2:
+    # Set default start date to 30 days ago
+    today = date.today()
+    start_date = st.date_input("Start Date")
+
+with col3:
+    # Set default end date to yesterday to ensure data is available
+    end_date = st.date_input("End Date") # Changed to yesterday
+
+# Basic validation for dates
+if start_date > end_date:
+    st.error("Error: End Date cannot be before Start Date. Please adjust your dates.")
+    st.stop() # Stop execution if dates is invalid
+
+tickers_list = [t.strip() for t in ticker_input.split(',') if t.strip()]
+
+if st.button("Fetch and Display Data"):
+    if not tickers_list:
+        st.warning("Please enter a ticker symbol.")
+    else:
+        #st.info(f"Fetching data for {tickers_list} from {start_date} to {end_date}...")
+
+        try:
+            # 1. Get historical price using your function
+            # The yfinance download function returns a DataFrame with a DatetimeIndex
+            Stocks_prices = GetHistoricalPrice(tickers_list,start_date,end_date, price='Close')
+            # If only one ticker, yfinance might return a Series. Convert to DataFrame if needed.
+            if isinstance(Stocks_prices, pd.Series):
+                Stocks_prices = Stocks_prices.to_frame(name='Close')
+
+            if Stocks_prices.empty:
+                st.warning(f"No historical data found for {tickers_list} in the specified range. Please check the ticker or date range.")
+            else:
+                # Ensure the index is a DatetimeIndex for reindexing
+                Stocks_prices.index = pd.to_datetime(Stocks_prices.index)
+
+                # 2. Generate all weekdays in the range
+                all_weekdays = pd.date_range(start=start_date, end=end_date, freq='B') # 'B' for business day frequency
+
+                # 3. Reindex the DataFrame to include all weekdays
+                # This will add rows for missing dates (e.g., weekends, holidays)
+                Stocks_prices = Stocks_prices.reindex(all_weekdays)
+
+                # 4. Fill forward missing values (e.g., for weekends/holidays)
+                # This ensures that non-trading days show the last known price
+                Stocks_prices = Stocks_prices.fillna(method='ffill')
+
+                # 5. Fill any remaining NaNs at the beginning if the first date was a non-trading day
+                # For example, if start_date is a Saturday and there's no prior Friday data.
+                Stocks_prices = Stocks_prices.fillna(method='bfill')
+
+                # Drop any rows that are still NaN (e.g., if the entire range is missing data)
+                Stocks_prices.dropna(inplace=True)
+
+                if Stocks_prices.empty:
+                    st.warning("After processing, the DataFrame is empty. This might mean no valid data was available for the selected period.")
+                else:
+                    st.success(f"Data for {tickers_list} from {start_date} to {end_date} processed successfully!")
+                    st.subheader("Data Overview")
+                    st.dataframe(Stocks_prices) # Display the DataFrame
+
+                    st.markdown("---")
 
 
+        except Exception as e:
+            st.error(f"An error occurred while fetching or processing data: {e}")
+            st.warning("Please ensure the ticker symbol is valid and you have an internet connection.")
 
-Stocks = Stocks_prices.pct_change()
-Stocks = Stocks.dropna()
-Stocks_prices.plot()
-plt.show()
-st.pyplot()
+st.markdown("---")
+
+##CHART
+try:
+    if not Stocks_prices.empty:
+
+        fig_prices, ax_prices = plt.subplots(figsize=(10, 6))
+        Stocks_prices.plot(ax=ax_prices)
+        ax_prices.set_title(f"Historical Closing Prices for {', '.join(tickers_list)}")
+        ax_prices.set_xlabel("Date")
+        ax_prices.set_ylabel("Price")
+        ax_prices.grid(True)
+        st.pyplot(fig_prices) # Display the plot in Streamlit
+        plt.close(fig_prices) # Close the figure to free up memory
+
+        st.subheader("Daily Percentage Change")
+                    # Calculate percentage change and drop NaNs
+        Stocks_pct_change = Stocks_prices.pct_change().dropna()
+
+        if Stocks_pct_change.empty:
+            st.warning("No sufficient data to calculate percentage change.")
+        else:
+            fig_pct_change, ax_pct_change = plt.subplots(figsize=(10, 6))
+            Stocks_pct_change.plot(ax=ax_pct_change)
+            ax_pct_change.set_title(f"Daily Percentage Change for {', '.join(tickers_list)}")
+            ax_pct_change.set_xlabel("Date")
+            ax_pct_change.set_ylabel("Percentage Change")
+            ax_pct_change.axhline(0, color='grey', linestyle='--', linewidth=0.8) # Add a horizontal line at
+            ax_pct_change.grid(True)
+            st.pyplot(fig_pct_change) # Display the plot in Streamlit
+            plt.close(fig_pct_change) # Close the figure to free up memory
+except Exception as e:
+    print('')
+###
 
 st.markdown('##  Fundamental analysis')
 
 fundamentals = []
 mean_ret = []
-for (columnName, columnData) in Stocks.iteritems():
+for (columnName, columnData) in Stocks_pct_change.iteritems():
     means = columnData.mean() * 252
     mean_ret.append(means)
     stds = columnData.std() * (252 ** 0.5)
@@ -70,10 +213,10 @@ for (columnName, columnData) in Stocks.iteritems():
     )
 
 reg_data = []
-for i in range(len(Stocks.columns)):
+for i in range(len(Stocks_prices.columns)):
     model = LinearRegression()
-    X = Stocks.iloc[0:, 0].to_numpy().reshape(-1, 1)
-    Y = Stocks.iloc[0:, i].to_numpy().reshape(-1, 1)
+    X = Stocks_prices.iloc[0:, 0].to_numpy().reshape(-1, 1)
+    Y = Stocks_prices.iloc[0:, i].to_numpy().reshape(-1, 1)
     reg = model.fit(X, Y)
     alpha = float(reg.intercept_)
     beta = float(reg.coef_)
