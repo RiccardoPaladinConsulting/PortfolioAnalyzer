@@ -1,22 +1,12 @@
-# pip install streamlit
-#from .config import *
-#from .Utils import *
 import streamlit as st
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
-from pandas_datareader import data
 from datetime import date, timedelta
-import yfinance as yf
-import seaborn as sn
 from sklearn.linear_model import LinearRegression
 from scipy.stats import kurtosis, skew
 import seaborn as sns
 import matplotlib.pyplot as plt
 from sklearn.metrics import mean_squared_error
-#import chart
-#import altair as alt
-from pypfopt import EfficientFrontier
 import pandas_datareader as web
 
 
