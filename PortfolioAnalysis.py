@@ -9,7 +9,6 @@ import matplotlib.pyplot as plt
 from sklearn.metrics import mean_squared_error
 import pandas_datareader as web
 
-
 def GetHistoricalPrice(tickers, start_date, end_date, price='Close'):
     """
     Fetches historical stock prices using pandas_datareader (Stooq source)
