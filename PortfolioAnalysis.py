@@ -113,8 +113,16 @@ def get_maximum_drawdown(daily_return_series):
     return drawdown.min()
 
 st.set_page_config(
-    page_title="Stock fundamental analysis")
-
+    page_title="Stock fundamental analysis",
+    page_icon="🧊",
+    layout="centered",
+    initial_sidebar_state="expanded",
+    menu_items={
+        'Get Help': 'https://paladinconsulting.it',
+        'Report a bug': "https://paladinconsulting.it",
+        'About': "# The web app aims to offer a symple tool to analyze stocks returns. It doesn't constitute any financial advice"
+    }
+)
 st.title('📈 Stock Fundamental Analysis')
 st.markdown('## *Author: Riccardo Paladin*')
 st.markdown(
@@ -193,7 +201,10 @@ if fetch_button:
                 else:
                     st.success(f"Data for {tickers_list} from {start_date} to {end_date} processed successfully!")
                     st.subheader("Data Overview")
-                    st.dataframe(Stocks_prices) # Display the DataFrame
+                    Stocks_prices_dis = Stocks_prices.reset_index()
+                    Stocks_prices_dis = Stocks_prices_dis.rename(columns={'index': 'Date'})
+                    Stocks_prices_dis['Date'] = pd.to_datetime(Stocks_prices_dis['Date']).dt.date
+                    st.dataframe(Stocks_prices_dis) # Display the DataFrame
 
                     st.markdown("---")
 
@@ -392,7 +403,7 @@ try:
         st.dataframe(performance) #Show dataframe
 
 except Exception as e:
-    print(st.error(f"An error occurred while fetching or processing data: {e}"))
+    print('')
 
 try:
     if not Stocks_prices.empty:
@@ -410,8 +421,8 @@ try:
         prediction = np.asarray(prediction)
         prediction = prediction.tolist()
         df = pd.DataFrame(prediction).T
-        df.columns = list(Stocks_prices.columns)
-        Stocks1 = Stocks_prices.append(df, ignore_index=True)
+        df.columns = list(df.columns)
+        Stocks1 = pd.concat([Stocks_prices, df], ignore_index=True)
         st.dataframe(Stocks1) #Show dataframe
 
 except Exception as e:
